@@ -1,0 +1,858 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>قارئ الكتب</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
+<style>
+  /* Layout: two screens in one shell. A library of saved books, and a one-screen reader (header, scrolling stage, control dock). A bottom sheet holds the reading options. */
+  :root {
+    --bg: #eef2f2;
+    --surface: #ffffff;
+    --fg: #12272b;
+    --muted: #5a6e72;
+    --line: #d3dcde;
+    --accent: #17606a;
+    --accent-fg: #ffffff;
+    --stage: #d9e1e2;
+    --danger: #b3261e;
+    --danger-fg: #ffffff;
+    --page-bg: #ffffff;
+    --shadow: 0 1px 4px rgba(10, 30, 35, 0.18);
+    --scrim: rgba(5, 15, 18, 0.5);
+    --font-ui: 'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1517;
+      --surface: #152124;
+      --fg: #e5eeef;
+      --muted: #94a9ac;
+      --line: #263639;
+      --accent: #6cc3cb;
+      --accent-fg: #052328;
+      --stage: #091012;
+      --danger: #ff8a80;
+      --danger-fg: #2b0805;
+      --shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+      --scrim: rgba(0, 0, 0, 0.6);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1517;
+    --surface: #152124;
+    --fg: #e5eeef;
+    --muted: #94a9ac;
+    --line: #263639;
+    --accent: #6cc3cb;
+    --accent-fg: #052328;
+    --stage: #091012;
+    --danger: #ff8a80;
+    --danger-fg: #2b0805;
+    --shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    --scrim: rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    padding-block: 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  #app { position: relative; height: 100%; min-height: 0; padding-block: 8px; }
+  .view { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+  button, input { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; }
+  .brand { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--accent); }
+  .brand h1 { margin: 0; font-size: 1.15rem; font-weight: 600; color: var(--fg); white-space: nowrap; }
+  .top h2 { margin: 0; flex: 1; min-width: 0; font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .btn {
+    min-height: 44px; padding: 0 16px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+    font-size: 0.95rem; font-weight: 500; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .btn.danger { background: var(--danger); border-color: var(--danger); color: var(--danger-fg); }
+  .btn.icon { width: 44px; padding: 0; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  /* ---------- library ---------- */
+  .lib { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+  .sec { display: flex; flex-direction: column; gap: 10px; }
+  .sec > h2 { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+  .count { font-variant-numeric: tabular-nums; margin-inline-start: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+
+  .book { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .cover {
+    position: relative; display: block; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; cursor: pointer; background: var(--stage); box-shadow: var(--shadow);
+  }
+  .cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .cover .ph { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); }
+  .meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .meta h3 {
+    margin: 0; font-size: 0.95rem; font-weight: 600; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+  }
+  .meta p { margin: 0; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .prog { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .prog i { display: block; height: 100%; background: var(--accent); }
+  .trash {
+    position: absolute; top: 6px; inset-inline-start: 6px; width: 40px; height: 40px; border-radius: 50%;
+    border: 0; cursor: pointer; display: grid; place-items: center;
+    background: rgba(10, 25, 28, 0.62); color: #fff;
+  }
+  .ask {
+    position: absolute; inset: 0; z-index: 2; display: none; flex-direction: column; justify-content: center; gap: 10px;
+    padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); text-align: center;
+  }
+  .ask p { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+  .ask div { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .book.confirm .ask { display: flex; }
+
+  .book.feat {
+    display: grid; grid-template-columns: 104px 1fr; gap: 14px; align-items: center;
+    padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  }
+  .book.feat .meta { gap: 6px; }
+  .book.feat .meta h3 { font-size: 1.05rem; }
+  .book.feat .btn { align-self: flex-start; margin-top: 4px; }
+  .book.feat .trash { top: 18px; inset-inline-start: 18px; }
+  .book.feat .ask { grid-column: 1 / -1; }
+
+  .empty {
+    flex: 1; max-width: 34rem; width: 100%; margin-inline: auto; padding: 24px 4px;
+    display: flex; flex-direction: column; justify-content: center; gap: 14px; overflow-y: auto;
+  }
+  .empty h2 { margin: 0; font-size: 1.45rem; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+  .empty p { margin: 0; color: var(--muted); }
+  .empty .btn { align-self: flex-start; min-height: 48px; padding: 0 22px; font-size: 1rem; }
+  .tips { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; }
+  .tips li { padding: 10px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.92rem; }
+  .tips b { color: var(--fg); font-weight: 600; }
+
+  /* ---------- reader ---------- */
+  .stagewrap { position: relative; flex: 1; min-height: 0; display: flex; }
+  .stage {
+    flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto;
+    background: var(--stage); border: 1px solid var(--line); border-radius: 14px;
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .pages { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px; }
+  .page { width: 100%; max-width: 860px; background: var(--page-bg); box-shadow: var(--shadow); overflow: hidden; }
+  .page canvas { display: block; width: 100%; height: 100%; }
+  .tone-sepia .page { background: #f1e4c2; }
+  .tone-sepia .page canvas { mix-blend-mode: multiply; }
+  .tone-night .page { background: #111; }
+  .tone-night .page canvas { filter: invert(1) hue-rotate(180deg); }
+  .count-over { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .count-over span {
+    display: grid; place-items: center; width: 104px; height: 104px; border-radius: 50%;
+    background: var(--surface); color: var(--accent); border: 2px solid var(--accent);
+    font-size: 3rem; font-weight: 600; box-shadow: var(--shadow); font-variant-numeric: tabular-nums;
+  }
+
+  .dock { display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+  .bar { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  .info { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .where { min-height: 32px; padding: 0; border: 0; background: none; color: var(--fg); font-size: 0.9rem; font-weight: 500; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 4px; }
+  .controls { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
+  .play { width: 52px; min-height: 52px; border: 0; border-radius: 12px; cursor: pointer; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; }
+  .play:disabled, .seg button:disabled { opacity: 0.45; cursor: default; }
+  .seg { display: grid; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; }
+  .seg.c4 { grid-template-columns: repeat(4, 1fr); }
+  .seg.c3 { grid-template-columns: repeat(3, 1fr); }
+  .seg button { min-height: 44px; padding: 0 2px; border: 0; border-radius: 9px; cursor: pointer; background: transparent; color: var(--fg); font-size: 0.88rem; font-weight: 500; white-space: nowrap; }
+  .seg button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 1.5px var(--accent); color: var(--accent); }
+
+  /* ---------- sheet, toast, busy ---------- */
+  .sheet { position: absolute; inset: 0; z-index: 30; display: flex; align-items: flex-end; }
+  .scrim { position: absolute; inset: 0; background: var(--scrim); }
+  .panel {
+    position: relative; width: 100%; max-height: 90%; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;
+    padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px 18px 0 0;
+  }
+  .panel h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  .field { display: flex; flex-direction: column; gap: 8px; }
+  .field > label, .field > span.l { font-size: 0.9rem; font-weight: 500; }
+  .field .hint { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .jump { display: flex; gap: 8px; }
+  .jump input {
+    flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 12px; font-size: 1rem;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 32px; }
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 0;
+    border: 0; background: none; color: var(--fg); font-size: 0.95rem; font-weight: 500; text-align: start; cursor: pointer;
+  }
+  .switch-row small { display: block; font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+  .sw { position: relative; flex: none; width: 52px; height: 30px; border-radius: 15px; border: 1px solid var(--line); background: var(--bg); }
+  .sw::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--muted); }
+  .switch-row[aria-checked="true"] .sw { background: var(--accent); border-color: var(--accent); }
+  .switch-row[aria-checked="true"] .sw::after { inset-inline-start: 25px; background: var(--accent-fg); }
+
+  .toast {
+    position: absolute; z-index: 40; inset-inline: 8px; bottom: 96px; padding: 12px 14px; border-radius: 12px;
+    background: var(--fg); color: var(--bg); font-size: 0.92rem; text-align: center; box-shadow: var(--shadow);
+  }
+  .toast.err { background: var(--danger); color: var(--danger-fg); }
+  .busy { position: absolute; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--scrim); }
+  .busy div { padding: 16px 22px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); font-weight: 500; }
+
+  .vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+  @media (prefers-reduced-motion: no-preference) { .bar i, .prog i { transition: width 0.3s linear; } }
+</style>
+
+<div id="app" dir="rtl" lang="ar">
+
+  <!-- Library -->
+  <div id="lib" class="view">
+    <header class="top">
+      <div class="brand">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.3 7.8 4.8 4 5v13c3.8-.2 6.3.3 8 1.5 1.7-1.2 4.2-1.7 8-1.5V5c-3.8-.2-6.3.3-8 1.5z"/><path d="M12 6.5v13"/></svg>
+        <h1>قارئ الكتب</h1>
+      </div>
+      <button id="add" class="btn primary" type="button">إضافة كتاب</button>
+    </header>
+    <section id="emptyLib" class="empty">
+      <h2>افتح كتابًا واتركه يقرأ معك</h2>
+      <p>أضف ملف PDF من جوالك، فتنزل صفحاته وحدها بالسرعة التي تحددها، ولا تحتاج إلى لمس الشاشة.</p>
+      <button id="add2" class="btn primary" type="button">اختر ملف PDF</button>
+      <ul class="tips">
+        <li><b>مكتبتك على جوالك.</b> تُحفظ الكتب التي تضيفها لتفتحها لاحقًا دون اختيار الملف من جديد.</li>
+        <li><b>تكمل من حيث توقفت.</b> يُحفظ موضعك في كل كتاب تلقائيًا.</li>
+        <li><b>تحكم في السرعة.</b> أربع سرعات جاهزة، وسرعة مخصصة، وتأخير قبل البدء لتضع الجوال في مكانه.</li>
+        <li><b>الملفات لا تُرفع</b> إلى أي موقع، وتبقى داخل متصفحك فقط.</li>
+      </ul>
+    </section>
+    <div id="libList" class="lib" hidden></div>
+  </div>
+
+  <!-- Reader -->
+  <div id="read" class="view tone-normal" hidden>
+    <header class="top">
+      <button id="back" class="btn" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        المكتبة
+      </button>
+      <h2 id="title"></h2>
+      <button id="opts" class="btn icon" type="button" aria-label="خيارات القراءة">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      </button>
+    </header>
+    <div class="stagewrap">
+      <main id="stage" class="stage" aria-label="صفحات الكتاب"><div id="pages" class="pages"></div></main>
+      <div id="countOver" class="count-over" hidden><span id="countNum">٣</span></div>
+    </div>
+    <footer class="dock">
+      <div class="bar"><i id="bar"></i></div>
+      <div class="info"><button id="where" class="where" type="button">—</button><span id="pace"></span></div>
+      <div class="controls">
+        <button id="play" class="play" type="button" aria-label="تشغيل" disabled></button>
+        <div class="seg c4" role="group" aria-label="سرعة التمرير">
+          <button type="button" data-speed="25">بطيء</button>
+          <button type="button" data-speed="55">متوسط</button>
+          <button type="button" data-speed="110">سريع</button>
+          <button type="button" data-speed="220">سريع جدا</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Reading options -->
+  <div id="sheet" class="sheet" hidden>
+    <div class="scrim" id="scrim"></div>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <h2 id="sheetTitle">خيارات القراءة</h2>
+      <div class="field">
+        <label for="jump">اذهب إلى صفحة</label>
+        <div class="jump">
+          <input id="jump" type="number" inputmode="numeric" min="1">
+          <button id="go" class="btn" type="button">اذهب</button>
+        </div>
+        <span id="jumpHint" class="hint"></span>
+      </div>
+      <div class="field">
+        <label for="spd">سرعة التمرير</label>
+        <input id="spd" type="range" min="10" max="400" step="5">
+        <span id="spdHint" class="hint"></span>
+      </div>
+      <button id="delay" class="switch-row" type="button" role="switch" aria-checked="false">
+        <span>تأخير ثلاث ثوانٍ قبل البدء<small>يعطيك وقتًا لتضع الجوال في مكانه.</small></span>
+        <span class="sw" aria-hidden="true"></span>
+      </button>
+      <div class="field">
+        <span class="l">لون الصفحات</span>
+        <div class="seg c3" role="group" aria-label="لون الصفحات">
+          <button type="button" data-tone="normal">عادي</button>
+          <button type="button" data-tone="sepia">ورقي</button>
+          <button type="button" data-tone="night">ليلي</button>
+        </div>
+      </div>
+      <button id="closeSheet" class="btn primary" type="button">تم</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="busy" class="busy" hidden><div id="busyMsg">جاري التحميل…</div></div>
+  <input id="file" class="vh" type="file" accept="application/pdf,.pdf" tabindex="-1" aria-hidden="true">
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+(function () {
+  var ICON_PLAY = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="6.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/><rect x="13.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/></svg>';
+  var ICON_BOOK = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.3 7.8 4.8 4 5v13c3.8-.2 6.3.3 8 1.5 1.7-1.2 4.2-1.7 8-1.5V5c-3.8-.2-6.3.3-8 1.5z"/><path d="M12 6.5v13"/></svg>';
+  var ICON_TRASH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5M14 11v5"/></svg>';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var libView = $('lib'), readView = $('read'), libList = $('libList'), emptyLib = $('emptyLib');
+  var stage = $('stage'), pagesEl = $('pages'), titleEl = $('title'), where = $('where'), pace = $('pace');
+  var bar = $('bar'), playBtn = $('play'), fileIn = $('file'), sheet = $('sheet');
+  var speedBtns = document.querySelectorAll('[data-speed]');
+  var toneBtns = document.querySelectorAll('[data-tone]');
+
+  var settings = { speed: 25, delay: false, tone: 'normal' };
+  var books = [], cur = null, idbOk = false;
+  var pdf = null, total = 0, token = 0, observer = null, wraps = [], state = [];
+  var playing = false, counting = false, pos = 0, last = 0, raf = 0, cdTimer = 0, lock = null;
+  var scrollQueued = false, saveTimer = 0, toastTimer = 0, resizeTimer = 0, lastFocus = null;
+
+  function fmt(n) { try { return Number(n).toLocaleString('ar-EG'); } catch (e) { return String(n); } }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function cleanName(n) { return String(n).replace(/\.pdf$/i, ''); }
+  function ago(t) {
+    var d = Math.floor((Date.now() - t) / 86400000);
+    if (d <= 0) return 'اليوم';
+    if (d === 1) return 'أمس';
+    if (d === 2) return 'قبل يومين';
+    if (d <= 10) return 'قبل ' + fmt(d) + ' أيام';
+    return 'قبل ' + fmt(d) + ' يومًا';
+  }
+
+  /* ---------- settings ---------- */
+  try {
+    var s0 = JSON.parse(localStorage.getItem('qk:set') || '{}');
+    if (s0.speed >= 10 && s0.speed <= 400) settings.speed = s0.speed;
+    settings.delay = !!s0.delay;
+    if (['normal', 'sepia', 'night'].indexOf(s0.tone) >= 0) settings.tone = s0.tone;
+  } catch (e) {}
+  function saveSettings() { try { localStorage.setItem('qk:set', JSON.stringify(settings)); } catch (e) {} }
+
+  /* ---------- messages ---------- */
+  function toast(msg, err) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast' + (err ? ' err' : '');
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 4500);
+  }
+  function busy(msg) {
+    if (msg) { $('busyMsg').textContent = msg; $('busy').hidden = false; } else { $('busy').hidden = true; }
+  }
+
+  /* ---------- storage (IndexedDB) ---------- */
+  var dbp = null;
+  function db() {
+    if (!dbp) {
+      dbp = new Promise(function (res, rej) {
+        var r = indexedDB.open('qari-alkutub', 1);
+        r.onupgradeneeded = function () {
+          r.result.createObjectStore('books', { keyPath: 'id' });
+          r.result.createObjectStore('files');
+        };
+        r.onsuccess = function () { res(r.result); };
+        r.onerror = function () { rej(r.error); };
+      });
+    }
+    return dbp;
+  }
+  function req(r) {
+    return new Promise(function (res, rej) {
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function txDone(t) {
+    return new Promise(function (res, rej) {
+      t.oncomplete = function () { res(); };
+      t.onerror = function () { rej(t.error); };
+      t.onabort = function () { rej(t.error); };
+    });
+  }
+  async function loadLibrary() {
+    try {
+      var d = await db();
+      books = await req(d.transaction('books', 'readonly').objectStore('books').getAll());
+      idbOk = true;
+    } catch (e) {
+      books = []; idbOk = false;
+      toast('المكتبة غير متاحة في هذا المتصفح، لذلك تُفتح الكتب لهذه الجلسة فقط.', true);
+    }
+    renderLibrary();
+  }
+  async function putBook(meta, file) {
+    var d = await db();
+    var t = d.transaction(['books', 'files'], 'readwrite');
+    t.objectStore('books').put(meta);
+    t.objectStore('files').put(file, meta.id);
+    await txDone(t);
+  }
+  async function getFile(id) {
+    var d = await db();
+    return req(d.transaction('files', 'readonly').objectStore('files').get(id));
+  }
+  async function removeBook(id) {
+    var d = await db();
+    var t = d.transaction(['books', 'files'], 'readwrite');
+    t.objectStore('books').delete(id);
+    t.objectStore('files').delete(id);
+    await txDone(t);
+  }
+  function persistMeta() {
+    if (!cur || cur.mem || !idbOk) return;
+    db().then(function (d) { d.transaction('books', 'readwrite').objectStore('books').put(cur); }).catch(function () {});
+  }
+
+  /* ---------- library screen ---------- */
+  function card(b, feat) {
+    var p = Math.max(0, Math.min(1, b.pos || 0));
+    var page = Math.min(b.pages, Math.floor(p * b.pages) + 1);
+    var status = p > 0.985 ? 'أنهيت الكتاب' : (p > 0 ? 'صفحة ' + fmt(page) + ' من ' + fmt(b.pages) : fmt(b.pages) + ' صفحة');
+    var cover = b.cover ? '<img src="' + b.cover + '" alt="">' : '<span class="ph">' + ICON_BOOK + '</span>';
+    return '<article class="book' + (feat ? ' feat' : '') + '" data-id="' + esc(b.id) + '">' +
+      '<button class="cover" data-open type="button" aria-label="فتح ' + esc(b.name) + '">' + cover + '</button>' +
+      '<div class="meta"><h3>' + esc(b.name) + '</h3>' +
+      '<div class="prog"><i style="width:' + Math.round(p * 100) + '%"></i></div>' +
+      '<p>' + status + (p > 0 ? ' · ' + fmt(Math.round(p * 100)) + '٪' : '') + '</p>' +
+      (feat ? '<p>آخر قراءة: ' + ago(b.updated) + '</p><button class="btn primary" data-open type="button">تابع القراءة</button>' : '') +
+      '</div>' +
+      '<button class="trash" data-del type="button" aria-label="حذف ' + esc(b.name) + '">' + ICON_TRASH + '</button>' +
+      '<div class="ask"><p>حذف «' + esc(b.name) + '» من مكتبتك؟</p><div>' +
+      '<button class="btn danger" data-yes type="button">حذف</button><button class="btn" data-no type="button">إلغاء</button></div></div>' +
+      '</article>';
+  }
+  function renderLibrary() {
+    books.sort(function (a, b) { return b.updated - a.updated; });
+    var has = books.length > 0;
+    emptyLib.hidden = has;
+    libList.hidden = !has;
+    if (!has) { libList.innerHTML = ''; return; }
+    var html = '<section class="sec"><h2>تابع القراءة</h2>' + card(books[0], true) + '</section>';
+    if (books.length > 1) {
+      html += '<section class="sec"><h2>كل الكتب<span class="count">' + fmt(books.length) + '</span></h2><div class="grid">' +
+        books.slice(1).map(function (b) { return card(b, false); }).join('') + '</div></section>';
+    }
+    libList.innerHTML = html;
+  }
+  libList.addEventListener('click', function (e) {
+    var art = e.target.closest('.book');
+    if (!art) return;
+    var id = art.getAttribute('data-id');
+    if (e.target.closest('[data-del]')) { art.classList.add('confirm'); return; }
+    if (e.target.closest('[data-no]')) { art.classList.remove('confirm'); return; }
+    if (e.target.closest('[data-yes]')) {
+      removeBook(id).then(function () {
+        books = books.filter(function (b) { return b.id !== id; });
+        renderLibrary();
+        toast('حُذف الكتاب من مكتبتك.');
+      }).catch(function () { toast('تعذر حذف الكتاب، حاول مرة أخرى.', true); });
+      return;
+    }
+    if (e.target.closest('[data-open]')) openSaved(id);
+  });
+
+  /* ---------- loading PDFs ---------- */
+  async function loadDoc(file) {
+    var buf = await file.arrayBuffer();
+    return pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false, disableFontFace: true }).promise;
+  }
+  async function makeCover(doc) {
+    try {
+      var p = await doc.getPage(1);
+      var b = p.getViewport({ scale: 1 });
+      var vp = p.getViewport({ scale: 260 / b.width });
+      var c = document.createElement('canvas');
+      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      var x = c.getContext('2d');
+      x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+      await p.render({ canvasContext: x, viewport: vp }).promise;
+      return c.toDataURL('image/jpeg', 0.72);
+    } catch (e) { return ''; }
+  }
+  function failMsg(e) {
+    var pass = e && e.name === 'PasswordException';
+    toast(pass ? 'هذا الملف محمي بكلمة مرور، ولا يمكن فتحه هنا.' : 'تعذر فتح الملف. تأكد أنه PDF سليم ثم جرّب مرة أخرى.', true);
+  }
+  async function addFile(file) {
+    busy('جاري تجهيز الكتاب…');
+    try {
+      var id = file.name + '|' + file.size;
+      var meta = books.filter(function (b) { return b.id === id; })[0];
+      var doc = await loadDoc(file);
+      if (!meta) {
+        meta = { id: id, name: cleanName(file.name), pages: doc.numPages, cover: await makeCover(doc), pos: 0, updated: Date.now() };
+        try {
+          await putBook(meta, file);
+          books.push(meta);
+        } catch (e) {
+          meta.mem = true;
+          toast('تعذر حفظ الكتاب في المكتبة، وسيُفتح لهذه الجلسة فقط.', true);
+        }
+      }
+      await enter(meta, doc);
+    } catch (e) { failMsg(e); }
+    finally { busy(false); }
+  }
+  async function openSaved(id) {
+    var meta = books.filter(function (b) { return b.id === id; })[0];
+    if (!meta) return;
+    busy('جاري فتح الكتاب…');
+    try {
+      var f = await getFile(id);
+      if (!f) throw new Error('missing');
+      var doc = await loadDoc(f);
+      await enter(meta, doc);
+    } catch (e) { failMsg(e); }
+    finally { busy(false); }
+  }
+
+  /* ---------- reader screen ---------- */
+  async function enter(meta, doc) {
+    pause();
+    token++;
+    if (observer) observer.disconnect();
+    if (pdf) { try { pdf.destroy(); } catch (e) {} }
+    pdf = doc; total = doc.numPages; cur = meta;
+    wraps = []; state = [];
+    pagesEl.innerHTML = '';
+
+    var first = await doc.getPage(1);
+    var vp = first.getViewport({ scale: 1 });
+    var frag = document.createDocumentFragment();
+    for (var i = 1; i <= total; i++) {
+      var w = document.createElement('div');
+      w.className = 'page';
+      w.setAttribute('data-n', i);
+      w.style.aspectRatio = vp.width + ' / ' + vp.height;
+      var c = document.createElement('canvas');
+      c.setAttribute('role', 'img');
+      c.setAttribute('aria-label', 'صفحة ' + i);
+      w.appendChild(c);
+      frag.appendChild(w);
+      wraps.push(w); state.push(0);
+    }
+    pagesEl.appendChild(frag);
+    titleEl.textContent = meta.name;
+    libView.hidden = true;
+    readView.hidden = false;
+    applyTone();
+    watch();
+    var max = stage.scrollHeight - stage.clientHeight;
+    stage.scrollTop = meta.pos > 0 ? meta.pos * max : 0;
+    meta.updated = Date.now();
+    persistMeta();
+    setEnabled(true);
+    paintSpeed();
+    paintPlay();
+    updateWhere();
+    if (meta.pos > 0.02 && meta.pos < 0.985) toast('تابعت من موضعك السابق.');
+  }
+  function leave() {
+    pause();
+    persistPos();
+    token++;
+    if (observer) observer.disconnect();
+    if (pdf) { try { pdf.destroy(); } catch (e) {} }
+    pdf = null; total = 0; wraps = []; state = []; cur = null;
+    pagesEl.innerHTML = '';
+    closeSheet();
+    readView.hidden = true;
+    libView.hidden = false;
+    renderLibrary();
+  }
+
+  /* drawing only the pages near the screen */
+  function release(n) {
+    var c = wraps[n - 1].firstChild;
+    c.width = 0; c.height = 0;
+    state[n - 1] = 0;
+  }
+  async function draw(n) {
+    var s = state[n - 1];
+    if (s === 1 || s === 2) return;
+    if (s === 3) { state[n - 1] = 1; return; }
+    state[n - 1] = 1;
+    var my = token;
+    try {
+      var page = await pdf.getPage(n);
+      if (my !== token) return;
+      var wrap = wraps[n - 1], c = wrap.firstChild;
+      var base = page.getViewport({ scale: 1 });
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var vp = page.getViewport({ scale: (wrap.clientWidth / base.width) * dpr });
+      wrap.style.aspectRatio = base.width + ' / ' + base.height;
+      c.width = Math.floor(vp.width);
+      c.height = Math.floor(vp.height);
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      if (my !== token) return;
+      if (state[n - 1] === 3) release(n); else state[n - 1] = 2;
+    } catch (e) {
+      if (my === token) state[n - 1] = 0;
+    }
+  }
+  function free(n) {
+    var s = state[n - 1];
+    if (s === 2) release(n); else if (s === 1) state[n - 1] = 3;
+  }
+  function watch() {
+    observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var n = +e.target.getAttribute('data-n');
+        if (e.isIntersecting) draw(n); else free(n);
+      });
+    }, { root: stage, rootMargin: '250% 0px' });
+    wraps.forEach(function (w) { observer.observe(w); });
+  }
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (!total || !observer) return;
+      wraps.forEach(function (w, i) { if (state[i] === 2) release(i + 1); });
+      wraps.forEach(function (w) { observer.unobserve(w); observer.observe(w); });
+      updatePace();
+    }, 300);
+  });
+
+  /* ---------- playback ---------- */
+  function paintPlay() {
+    var on = playing || counting;
+    playBtn.innerHTML = on ? ICON_PAUSE : ICON_PLAY;
+    playBtn.setAttribute('aria-label', on ? 'إيقاف مؤقت' : 'تشغيل');
+  }
+  function setEnabled(on) {
+    playBtn.disabled = !on;
+    speedBtns.forEach(function (b) { b.disabled = !on; });
+  }
+  function paceText() {
+    if (!total) return '';
+    var secs = Math.max(1, Math.round((stage.scrollHeight / total) / settings.speed));
+    return '≈ صفحة كل ' + fmt(secs) + ' ثانية';
+  }
+  function updatePace() { pace.textContent = paceText(); $('spdHint').textContent = paceText(); }
+  function paintSpeed() {
+    speedBtns.forEach(function (b) {
+      b.setAttribute('aria-pressed', +b.getAttribute('data-speed') === settings.speed ? 'true' : 'false');
+    });
+    $('spd').value = settings.speed;
+    updatePace();
+  }
+  async function keepAwake(on) {
+    try {
+      if (on) {
+        if ('wakeLock' in navigator && !lock) {
+          lock = await navigator.wakeLock.request('screen');
+          lock.addEventListener('release', function () { lock = null; });
+        }
+      } else if (lock) {
+        await lock.release();
+        lock = null;
+      }
+    } catch (e) { lock = null; }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) persistPos();
+    else if (playing || counting) keepAwake(true);
+  });
+  window.addEventListener('pagehide', persistPos);
+
+  function run() {
+    playing = true;
+    pos = stage.scrollTop;
+    last = performance.now();
+    raf = requestAnimationFrame(tick);
+    paintPlay();
+  }
+  function begin() {
+    if (!total || playing || counting) return;
+    keepAwake(true);
+    if (settings.delay) {
+      var n = 3;
+      counting = true;
+      $('countNum').textContent = fmt(n);
+      $('countOver').hidden = false;
+      paintPlay();
+      cdTimer = setInterval(function () {
+        n--;
+        if (n <= 0) {
+          clearInterval(cdTimer);
+          counting = false;
+          $('countOver').hidden = true;
+          run();
+        } else {
+          $('countNum').textContent = fmt(n);
+        }
+      }, 1000);
+    } else {
+      run();
+    }
+  }
+  function pause() {
+    var was = playing || counting;
+    if (counting) { clearInterval(cdTimer); counting = false; $('countOver').hidden = true; }
+    if (playing) { playing = false; cancelAnimationFrame(raf); }
+    if (was) { paintPlay(); keepAwake(false); persistPos(); }
+  }
+  function toggle() { if (playing || counting) pause(); else begin(); }
+  function tick(t) {
+    if (!playing) return;
+    var dt = Math.min((t - last) / 1000, 0.1);
+    last = t;
+    pos += settings.speed * dt;
+    stage.scrollTop = pos;
+    if (Math.ceil(pos) + stage.clientHeight >= stage.scrollHeight - 2) {
+      pause();
+      where.textContent = 'انتهى الكتاب';
+      bar.style.width = '100%';
+      toast('وصلت إلى نهاية الكتاب.');
+      return;
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  /* ---------- position ---------- */
+  function curPage() {
+    var h = stage.scrollHeight;
+    if (!total || !h) return 1;
+    return Math.min(total, Math.floor(((stage.scrollTop + stage.clientHeight * 0.4) / h) * total) + 1);
+  }
+  function updateWhere() {
+    if (!total) return;
+    var max = stage.scrollHeight - stage.clientHeight;
+    where.textContent = 'صفحة ' + fmt(curPage()) + ' من ' + fmt(total);
+    bar.style.width = (max > 0 ? Math.min(100, (stage.scrollTop / max) * 100) : 0) + '%';
+  }
+  function persistPos() {
+    if (!cur || !total) return;
+    var max = stage.scrollHeight - stage.clientHeight;
+    if (max <= 0) return;
+    cur.pos = Math.max(0, Math.min(1, stage.scrollTop / max));
+    cur.updated = Date.now();
+    persistMeta();
+  }
+  function goPage(n) {
+    n = Math.max(1, Math.min(total, parseInt(n, 10) || 1));
+    var w = wraps[n - 1];
+    stage.scrollTop = stage.scrollTop + w.getBoundingClientRect().top - stage.getBoundingClientRect().top - 8;
+    updateWhere();
+  }
+  stage.addEventListener('scroll', function () {
+    if (!scrollQueued) {
+      scrollQueued = true;
+      requestAnimationFrame(function () { scrollQueued = false; updateWhere(); });
+    }
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistPos, 1200);
+  }, { passive: true });
+  // a manual drag or wheel takes over from the automatic scroll
+  stage.addEventListener('touchmove', function () { if (playing) pause(); }, { passive: true });
+  stage.addEventListener('wheel', function () { if (playing) pause(); }, { passive: true });
+  stage.addEventListener('click', toggle);
+
+  /* ---------- reading options ---------- */
+  function applyTone() {
+    readView.classList.remove('tone-normal', 'tone-sepia', 'tone-night');
+    readView.classList.add('tone-' + settings.tone);
+    toneBtns.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-tone') === settings.tone ? 'true' : 'false');
+    });
+  }
+  function paintDelay() { $('delay').setAttribute('aria-checked', settings.delay ? 'true' : 'false'); }
+  function openSheet() {
+    pause();
+    lastFocus = document.activeElement;
+    $('jump').value = curPage();
+    $('jump').max = total;
+    $('jumpHint').textContent = 'الكتاب ' + fmt(total) + ' صفحة.';
+    paintSpeed(); paintDelay(); applyTone();
+    sheet.hidden = false;
+    $('closeSheet').focus();
+  }
+  function closeSheet() {
+    if (sheet.hidden) return;
+    sheet.hidden = true;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  $('opts').addEventListener('click', openSheet);
+  where.addEventListener('click', openSheet);
+  $('closeSheet').addEventListener('click', closeSheet);
+  $('scrim').addEventListener('click', closeSheet);
+  $('go').addEventListener('click', function () { goPage($('jump').value); closeSheet(); });
+  $('jump').addEventListener('keydown', function (e) { if (e.key === 'Enter') { goPage($('jump').value); closeSheet(); } });
+  $('spd').addEventListener('input', function () {
+    settings.speed = +$('spd').value;
+    saveSettings();
+    paintSpeed();
+  });
+  $('delay').addEventListener('click', function () { settings.delay = !settings.delay; saveSettings(); paintDelay(); });
+  toneBtns.forEach(function (b) {
+    b.addEventListener('click', function () { settings.tone = b.getAttribute('data-tone'); saveSettings(); applyTone(); });
+  });
+  speedBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      settings.speed = +b.getAttribute('data-speed');
+      saveSettings();
+      paintSpeed();
+      begin();
+    });
+  });
+  playBtn.addEventListener('click', toggle);
+  $('back').addEventListener('click', leave);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeSheet(); return; }
+    if (e.code === 'Space' && !readView.hidden && sheet.hidden && !/INPUT|BUTTON|TEXTAREA/.test(document.activeElement.tagName)) {
+      e.preventDefault();
+      toggle();
+    }
+  });
+
+  /* ---------- adding books ---------- */
+  function pick() { fileIn.click(); }
+  $('add').addEventListener('click', pick);
+  $('add2').addEventListener('click', pick);
+  fileIn.addEventListener('change', function () {
+    var f = fileIn.files && fileIn.files[0];
+    fileIn.value = '';
+    if (f) addFile(f);
+  });
+
+  /* ---------- start ---------- */
+  paintPlay();
+  setEnabled(false);
+  if (typeof pdfjsLib === 'undefined') {
+    toast('تعذر تحميل مكتبة قراءة PDF. تحقق من الاتصال ثم أعد فتح الصفحة.', true);
+    $('add').disabled = true; $('add2').disabled = true;
+  } else {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  loadLibrary();
+})();
+</script>
+
+</body></html>
